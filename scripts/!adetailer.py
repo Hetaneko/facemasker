@@ -482,9 +482,9 @@ class AfterDetailerScript(scripts.Script):
             p.extra_generation_params.update(extra_params)
 
     def postprocess(self, p, processed, *args_):
+        args = self.get_args(*args_)
         if not self.is_ad_enabled(args):
             return
-        args = self.get_args(*args_)
         is_mediapipe = args.ad_model.lower().startswith("mediapipe")
         kwargs = {}
         if is_mediapipe:
