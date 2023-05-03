@@ -481,23 +481,11 @@ class AfterDetailerScript(scripts.Script):
             extra_params = self.extra_params(args)
             p.extra_generation_params.update(extra_params)
 
-    def postprocess_image(self, p, pp, *args_):
-        if getattr(p, "_disable_adetailer", False):
-            return
-
-        args = self.get_args(*args_)
-
+    def postprocess(self, p, processed, *args_):
         if not self.is_ad_enabled(args):
             return
-
-        p._idx = getattr(p, "_idx", -1) + 1
-        i = p._idx
-
-        i2i = self.get_i2i_p(p, args, pp.image)
-        seed, subseed = self.get_seed(p)
-
+        args = self.get_args(*args_)
         is_mediapipe = args.ad_model.lower().startswith("mediapipe")
-
         kwargs = {}
         if is_mediapipe:
             predictor = mediapipe_predict
@@ -508,58 +496,14 @@ class AfterDetailerScript(scripts.Script):
             kwargs["device"] = self.ultralytics_device
 
         with ChangeTorchLoad():
-            pred = predictor(ad_model, pp.image, args.ad_conf, **kwargs)
+            pred = predictor(ad_model, processed.images[0], args.ad_conf, **kwargs)
 
         if pred.masks is None:
             print(
                 f"[-] ADetailer: nothing detected on image {i + 1} with current settings."
             )
             return
-
-        if opts.data.get("ad_save_previews", False):
-            images.save_image(
-                image=pred.preview,
-                path=p.outpath_samples,
-                basename="",
-                seed=seed,
-                prompt=p.all_prompts[i],
-                extension=opts.samples_format,
-                info=self.infotext(p),
-                p=p,
-                suffix="-ad-preview",
-            )
-
-        masks = pred.masks
-        steps = len(masks)
-        processed = None
-
-        if is_mediapipe:
-            print(f"mediapipe: {steps} detected.")
-
-        p2 = copy(i2i)
-        for j in range(steps):
-            mask = masks[j]
-            mask = dilate_erode(mask, args.ad_dilate_erode)
-
-            if not is_all_black(mask):
-                mask = offset(mask, args.ad_x_offset, args.ad_y_offset)
-                p2.image_mask = mask
-                processed = process_images(p2)
-
-                p2 = copy(i2i)
-                p2.init_images = [processed.images[0]]
-
-            p2.seed = seed + j + 1
-            p2.subseed = subseed + j + 1
-
-        if processed is not None:
-            pp.image = processed.images[0]
-
-        try:
-            if i == len(p.all_prompts) - 1:
-                self.write_params_txt(p)
-        except Exception:
-            pass
+        processed.images.extend([pred.masks[0]])
 
 
 def on_ui_settings():
